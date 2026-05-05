@@ -6,7 +6,7 @@ import prompts from 'prompts';
 const RESET_CHATBOT_DATA = {
   name: 'Demo Chatbot',
   introduction:
-    '- Du bist ein KI-basierter Chatbot der Musterorganisation\n' +
+    '- Du bist ein KI-basierter Chatbot der Musterorganisation.\n' +
     '- Du hilfst bei Fragen rund um die Dienstleistungen der Musterorganisation.',
 };
 
@@ -57,7 +57,16 @@ async function main() {
     await deleteCollection(db, 'trainingtasks');
 
     // Process settings collection
+    await deleteCollection(db, 'knowledgebases');
+
+    // Process settings collection
+    await deleteCollection(db, 'knowledgebasedocuments');
+
+    // Process settings collection
     await deleteCollection(db, 'settings');
+
+    // Process users collection
+    await deleteCollection(db, 'users');
 
     // Process chatbots collection (reset)
     await resetChatbotsCollection(db);
