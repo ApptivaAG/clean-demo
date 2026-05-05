@@ -1,0 +1,23 @@
+{
+  "name": "clean-demo",
+  "version": "1.0.0",
+  "description": "Clean up demo chatbot MongoDB collections",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "clean-demo": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.3.0",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^5.3.3"
+  }
+}
