@@ -56,6 +56,9 @@ async function main() {
     // Process trainingtasks collection
     await deleteCollection(db, 'trainingtasks');
 
+    // Process settings collection
+    await deleteCollection(db, 'settings');
+
     // Process chatbots collection (reset)
     await resetChatbotsCollection(db);
 
