@@ -34,6 +34,7 @@
 
             cat > $out/bin/clean-demo << EOF
             #!${pkgs.bash}/bin/bash
+            export PATH="${pkgs.kubectl}/bin:$PATH"
             exec ${nodejs}/bin/node $out/lib/dist/index.js "\$@"
             EOF
             chmod +x $out/bin/clean-demo
@@ -60,7 +61,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [ nodejs pkgs.nodePackages.typescript ];
+          buildInputs = [ nodejs pkgs.nodePackages.typescript pkgs.kubectl ];
           shellHook = ''
             echo "Development environment loaded"
             echo "Run 'npm install' to install dependencies"
