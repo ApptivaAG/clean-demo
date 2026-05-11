@@ -6,12 +6,21 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         nodejs = pkgs.nodejs_20;
-        
+        gcloud = pkgs.google-cloud-sdk.withExtraComponents [
+          pkgs.google-cloud-sdk.components.gke-gcloud-auth-plugin
+        ];
+
         clean-demo = pkgs.buildNpmPackage {
           pname = "clean-demo";
           version = "1.0.0";
@@ -34,7 +43,10 @@
 
             cat > $out/bin/clean-demo << EOF
             #!${pkgs.bash}/bin/bash
-            export PATH="${pkgs.kubectl}/bin:$PATH"
+            if ! command -v kubectl &> /dev/null; then
+              export PATH="${pkgs.kubectl}/bin:${gcloud}/bin:\$PATH"
+            fi
+            export USE_GKE_GCLOUD_AUTH_PLUGIN=True
             exec ${nodejs}/bin/node $out/lib/dist/index.js "\$@"
             EOF
             chmod +x $out/bin/clean-demo
@@ -43,7 +55,7 @@
           meta = with pkgs.lib; {
             description = "Clean demo chatbot MongoDB collections";
             license = licenses.mit;
-            maintainers = [];
+            maintainers = [ ];
           };
         };
       in
@@ -61,8 +73,12 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [ nodejs pkgs.nodePackages.typescript pkgs.kubectl ];
+          buildInputs = [
+            nodejs
+            pkgs.typescript
+          ];
           shellHook = ''
+            export USE_GKE_GCLOUD_AUTH_PLUGIN=True
             echo "Development environment loaded"
             echo "Run 'npm install' to install dependencies"
             echo "Run 'npm run build' to build"
