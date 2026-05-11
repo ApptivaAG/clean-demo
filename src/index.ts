@@ -3,13 +3,6 @@
 import { MongoClient } from 'mongodb';
 import prompts from 'prompts';
 
-const RESET_CHATBOT_DATA = {
-  name: 'Demo Chatbot',
-  introduction:
-    '- Du bist ein KI-basierter Chatbot der Musterorganisation.\n' +
-    '- Du hilfst bei Fragen rund um die Dienstleistungen der Musterorganisation.',
-};
-
 const AZURE_SEARCH_SERVICES = [
   {
     name: 'bubble-chat-ai-search-s1',
@@ -31,7 +24,7 @@ const AZURE_SEARCH_SERVICES = [
 async function main() {
   console.log('🧹 Demo Chatbot Cleanup Tool\n');
 
-  // Prompt for project ID and password
+  // Prompt for project ID
   const { projectId } = await prompts({
     type: 'text',
     name: 'projectId',
@@ -44,6 +37,18 @@ async function main() {
     process.exit(0);
   }
 
+  // Perform MongoDB cleanup
+  await performMongoDBCleanup(projectId);
+
+  // Display Azure AI Search index cleanup instructions
+  await displayAzureSearchCleanupInstructions(projectId);
+
+  // Restart Kubernetes deployment
+  await restartKubernetesDeployment(projectId);
+}
+
+async function performMongoDBCleanup(projectId: string) {
+  // Prompt for password
   const { password } = await prompts({
     type: 'password',
     name: 'password',
@@ -68,21 +73,49 @@ async function main() {
 
     const db = client.db(`demo-${projectId}`);
 
-    await deleteCollection(db, 'conversations');
-    await deleteCollection(db, 'trainingtasks');
-    await deleteCollection(db, 'knowledgebases');
-    await deleteCollection(db, 'knowledgebasedocuments');
-    await deleteCollection(db, 'settings');
-    await deleteCollection(db, 'users');
-    await resetChatbotsCollection(db);
+    // Get all collections with their document counts
+    const collections = await getAllCollectionsWithCounts(db);
 
-    console.log('\n✨ All operations completed successfully!');
+    if (collections.length === 0) {
+      console.log('ℹ️  No collections found in database');
+      return;
+    }
 
-    // Display Azure AI Search index cleanup instructions
-    await displayAzureSearchCleanupInstructions(projectId);
+    // Display all collections in a formatted table
+    console.log('📊 Collections in database:\n');
+    console.log('   Collection Name                    Documents');
+    console.log('   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    // Restart Kubernetes deployment
-    await restartKubernetesDeployment(projectId);
+    let totalDocuments = 0;
+    for (const col of collections) {
+      const paddedName = col.name.padEnd(35);
+      const paddedCount = col.count.toString().padStart(6);
+      console.log(`   ${paddedName}${paddedCount}`);
+      totalDocuments += col.count;
+    }
+
+    console.log('   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    const paddedTotal = 'Total:'.padEnd(35);
+    const paddedTotalCount = totalDocuments.toString().padStart(6);
+    console.log(`   ${paddedTotal}${paddedTotalCount}\n`);
+
+    // Single confirmation to delete all collections
+    const { confirmDelete } = await prompts({
+      type: 'confirm',
+      name: 'confirmDelete',
+      message: `Delete all ${collections.length} collection(s) with ${totalDocuments} total document(s)?`,
+      initial: false,
+    });
+
+    if (confirmDelete) {
+      // Delete all collections
+      await deleteAllCollections(db, collections);
+      console.log('\n✅ Collections deleted successfully!');
+    } else {
+      console.log('\n⏭️  Skipped collection deletion');
+    }
+
+    console.log('\n✨ Database operations completed!');
   } catch (error) {
     console.error('\n❌ Error:', error instanceof Error ? error.message : error);
     process.exit(1);
@@ -92,57 +125,36 @@ async function main() {
   }
 }
 
-async function deleteCollection(db: any, collectionName: string) {
-  console.log(`\n📊 Collection: ${collectionName}`);
+async function getAllCollectionsWithCounts(db: any) {
+  const collectionsList = await db.listCollections().toArray();
+  const collections = [];
 
-  const collection = db.collection(collectionName);
-  const count = await collection.countDocuments();
-
-  console.log(`   Documents: ${count}`);
-
-  if (count === 0) {
-    console.log('   ℹ️  Collection is already empty, skipping...');
-    return;
+  for (const col of collectionsList) {
+    const collection = db.collection(col.name);
+    const count = await collection.countDocuments();
+    collections.push({ name: col.name, count });
   }
 
-  const { confirm } = await prompts({
-    type: 'confirm',
-    name: 'confirm',
-    message: `Delete all ${count} document(s) from ${collectionName}?`,
-    initial: false,
-  });
-
-  if (!confirm) {
-    console.log(`   ⏭️  Skipped ${collectionName}`);
-    return;
-  }
-
-  const result = await collection.deleteMany({});
-  console.log(`   ✅ Deleted ${result.deletedCount} document(s)`);
+  return collections;
 }
 
-async function resetChatbotsCollection(db: any) {
-  console.log(`\n📊 Collection: chatbots`);
+async function deleteAllCollections(
+  db: any,
+  collections: { name: string; count: number }[]
+) {
+  console.log('\n🗑️  Deleting collections...\n');
 
-  const collection = db.collection('chatbots');
-  const count = await collection.countDocuments();
-
-  console.log(`   Documents: ${count}`);
-
-  const { confirm } = await prompts({
-    type: 'confirm',
-    name: 'confirm',
-    message: `Reset chatbots collection (update all documents with default values)?`,
-    initial: false,
-  });
-
-  if (!confirm) {
-    console.log(`   ⏭️  Skipped chatbots`);
-    return;
+  for (const col of collections) {
+    try {
+      await db.collection(col.name).drop();
+      console.log(`   ✅ Deleted collection: ${col.name} (${col.count} document(s))`);
+    } catch (error) {
+      console.error(
+        `   ❌ Failed to delete ${col.name}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
   }
-
-  const result = await collection.updateMany({}, { $set: RESET_CHATBOT_DATA });
-  console.log(`   ✅ Updated ${result.modifiedCount} document(s)`);
 }
 
 function generateAzureSearchUrls(projectId: string) {
