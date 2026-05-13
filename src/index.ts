@@ -40,11 +40,52 @@ async function main() {
   // Perform MongoDB cleanup
   await performMongoDBCleanup(projectId);
 
-  // Display Azure AI Search index cleanup instructions
-  await displayAzureSearchCleanupInstructions(projectId);
+  // Perform Azure AI Search index cleanup
+  await performAzureSearchCleanup(projectId);
 
   // Restart Kubernetes deployment
   await restartKubernetesDeployment(projectId);
+}
+
+interface AzureSearchCredentials {
+  endpoint: string;
+  apiKey: string;
+  indexName: string;
+}
+
+async function getAzureSearchCredentialsFromKubernetes(
+  projectId: string
+): Promise<AzureSearchCredentials | null> {
+  const namespace = `bubble-demo-${projectId}-chatbot`;
+  
+  console.log('📡 Fetching Azure AI Search credentials from Kubernetes...');
+  
+  try {
+    const { execSync } = await import('child_process');
+    
+    const getSecret = (key: string): string => {
+      const base64Value = execSync(
+        `kubectl get secret env-vars -n ${namespace} -o jsonpath='{.data.${key}}'`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      ).trim();
+      return Buffer.from(base64Value, 'base64').toString('utf-8');
+    };
+    
+    const credentials = {
+      endpoint: getSecret('AZURE_AI_SEARCH_ENDPOINT'),
+      apiKey: getSecret('AZURE_AI_SEARCH_API_KEY'),
+      indexName: getSecret('AZURE_AI_SEARCH_INDEX_NAME'),
+    };
+    
+    if (!credentials.endpoint || !credentials.apiKey || !credentials.indexName) {
+      return null;
+    }
+    
+    console.log('✅ Credentials retrieved from Kubernetes\n');
+    return credentials;
+  } catch (error) {
+    return null;
+  }
 }
 
 async function getMongoDBUrlFromKubernetes(projectId: string): Promise<string | null> {
@@ -188,6 +229,31 @@ async function deleteAllCollections(
   }
 }
 
+async function deleteAzureSearchIndex(credentials: AzureSearchCredentials): Promise<boolean> {
+  const { endpoint, apiKey, indexName } = credentials;
+  const url = `${endpoint}/indexes/${indexName}?api-version=2023-11-01`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'api-key': apiKey,
+      },
+    });
+    
+    if (response.status === 204 || response.status === 404) {
+      // 204 = deleted successfully, 404 = index didn't exist
+      return true;
+    }
+    
+    console.error(`   ❌ Failed to delete index: ${response.status} ${response.statusText}`);
+    return false;
+  } catch (error) {
+    console.error(`   ❌ Error:`, error instanceof Error ? error.message : error);
+    return false;
+  }
+}
+
 function generateAzureSearchUrls(projectId: string) {
   return AZURE_SEARCH_SERVICES.map((service) => ({
     ...service,
@@ -195,10 +261,8 @@ function generateAzureSearchUrls(projectId: string) {
   }));
 }
 
-async function displayAzureSearchCleanupInstructions(projectId: string) {
-  console.log('\n🔍 Azure AI Search Index Cleanup');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`\nTo complete the cleanup, delete the Azure AI Search index:\n`);
+function displayManualAzureSearchLinks(projectId: string) {
+  console.log(`\n   To complete the cleanup, delete the Azure AI Search index:\n`);
   console.log(`   Index name: bubble-demo-${projectId}\n`);
   console.log('   The index could be in one of these search services:');
   console.log('   (Click the correct link - Ctrl+Click or Cmd+Click)\n');
@@ -214,18 +278,57 @@ async function displayAzureSearchCleanupInstructions(projectId: string) {
   console.log('   2. If the index exists, click the "Delete" button');
   console.log('   3. If not found, try the next link');
   console.log('   4. Confirm the deletion when found\n');
+}
 
-  const { confirmed } = await prompts({
-    type: 'confirm',
-    name: 'confirmed',
-    message: 'Have you completed the Azure AI Search index cleanup?',
-    initial: false,
-  });
-
-  if (confirmed) {
-    console.log('   ✅ Azure AI Search index cleanup confirmed\n');
+async function performAzureSearchCleanup(projectId: string) {
+  console.log('\n🔍 Azure AI Search Index Cleanup');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  
+  // Try to get credentials from Kubernetes
+  const credentials = await getAzureSearchCredentialsFromKubernetes(projectId);
+  
+  if (credentials) {
+    // Automatic deletion flow
+    console.log(`   Index name: ${credentials.indexName}`);
+    console.log(`   Endpoint:   ${credentials.endpoint}\n`);
+    
+    const { confirmDelete } = await prompts({
+      type: 'confirm',
+      name: 'confirmDelete',
+      message: `Delete Azure AI Search index "${credentials.indexName}"?`,
+      initial: false,
+    });
+    
+    if (confirmDelete) {
+      console.log('\n   🗑️  Deleting index...');
+      const success = await deleteAzureSearchIndex(credentials);
+      
+      if (success) {
+        console.log('   ✅ Azure AI Search index deleted successfully\n');
+      } else {
+        console.log('   ⚠️  Failed to delete automatically. Please delete manually.\n');
+        displayManualAzureSearchLinks(projectId);
+      }
+    } else {
+      console.log('\n   ⏭️  Skipped Azure AI Search index deletion\n');
+    }
   } else {
-    console.log('   ⚠️  Please complete the Azure AI Search index cleanup manually\n');
+    // Fallback to manual flow
+    console.log('⚠️  Could not fetch credentials from Kubernetes\n');
+    displayManualAzureSearchLinks(projectId);
+    
+    const { confirmed } = await prompts({
+      type: 'confirm',
+      name: 'confirmed',
+      message: 'Have you completed the Azure AI Search index cleanup?',
+      initial: false,
+    });
+    
+    if (confirmed) {
+      console.log('   ✅ Azure AI Search index cleanup confirmed\n');
+    } else {
+      console.log('   ⚠️  Please complete the Azure AI Search index cleanup manually\n');
+    }
   }
 }
 
