@@ -47,22 +47,53 @@ async function main() {
   await restartKubernetesDeployment(projectId);
 }
 
-async function performMongoDBCleanup(projectId: string) {
-  // Prompt for password
-  const { password } = await prompts({
-    type: 'password',
-    name: 'password',
-    message: 'Enter password:',
-    validate: (value) => (value.length > 0 ? true : 'Password is required'),
-  });
-
-  if (!password) {
-    console.log('❌ Operation cancelled');
-    process.exit(0);
+async function getMongoDBUrlFromKubernetes(projectId: string): Promise<string | null> {
+  const namespace = `bubble-demo-${projectId}-chatbot`;
+  
+  console.log('📡 Fetching MongoDB credentials from Kubernetes...');
+  
+  try {
+    const { execSync } = await import('child_process');
+    const base64Value = execSync(
+      `kubectl get secret env-vars -n ${namespace} -o jsonpath='{.data.CHATBOT_MONGO_DB_URL}'`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+    
+    if (!base64Value) {
+      return null;
+    }
+    
+    // Decode base64
+    const connectionString = Buffer.from(base64Value, 'base64').toString('utf-8');
+    console.log('✅ Credentials retrieved from Kubernetes\n');
+    return connectionString;
+  } catch (error) {
+    return null;
   }
+}
 
-  // Build connection string
-  const connectionString = `mongodb+srv://demo-${projectId}:${password}@production.1zpny.mongodb.net/demo-${projectId}?retryWrites=true&w=majority`;
+async function performMongoDBCleanup(projectId: string) {
+  // Try to get connection string from Kubernetes first
+  let connectionString = await getMongoDBUrlFromKubernetes(projectId);
+  
+  // Fallback to manual password entry if Kubernetes fetch fails
+  if (!connectionString) {
+    console.log('⚠️  Could not fetch from Kubernetes, falling back to manual entry\n');
+    
+    const { password } = await prompts({
+      type: 'password',
+      name: 'password',
+      message: 'Enter MongoDB password:',
+      validate: (value) => (value.length > 0 ? true : 'Password is required'),
+    });
+
+    if (!password) {
+      console.log('❌ Operation cancelled');
+      process.exit(0);
+    }
+
+    connectionString = `mongodb+srv://demo-${projectId}:${password}@production.1zpny.mongodb.net/demo-${projectId}?retryWrites=true&w=majority`;
+  }
 
   console.log('\n📡 Connecting to MongoDB...');
   const client = new MongoClient(connectionString);

@@ -76,6 +76,7 @@
           buildInputs = [
             nodejs
             pkgs.typescript
+            pkgs.kubectl
           ];
           shellHook = ''
             export USE_GKE_GCLOUD_AUTH_PLUGIN=True
