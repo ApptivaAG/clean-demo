@@ -1,0 +1,11 @@
+### Delete Azure AI Search Index
+
+# This tests the Azure AI Search DELETE endpoint used in src/index.ts:292
+
+@endpoint = https://bubble-chat-ai-search-s1-2.search.windows.net
+
+# @prompt indexName Index Name bubble-demo-example-index
+# @secret apiKey Azure Search API Key
+
+DELETE {{endpoint}}/indexes/{{indexName}}?api-version=2023-11-01 HTTP/1.1
+Api-Key: {{apiKey}}

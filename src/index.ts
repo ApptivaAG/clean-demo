@@ -57,12 +57,12 @@ async function getAzureSearchCredentialsFromKubernetes(
   projectId: string
 ): Promise<AzureSearchCredentials | null> {
   const namespace = `bubble-demo-${projectId}-chatbot`;
-  
+
   console.log('📡 Fetching Azure AI Search credentials from Kubernetes...');
-  
+
   try {
     const { execSync } = await import('child_process');
-    
+
     const getSecret = (key: string): string => {
       const base64Value = execSync(
         `kubectl get secret env-vars -n ${namespace} -o jsonpath='{.data.${key}}'`,
@@ -70,17 +70,17 @@ async function getAzureSearchCredentialsFromKubernetes(
       ).trim();
       return Buffer.from(base64Value, 'base64').toString('utf-8');
     };
-    
+
     const credentials = {
       endpoint: getSecret('AZURE_AI_SEARCH_ENDPOINT'),
       apiKey: getSecret('AZURE_AI_SEARCH_API_KEY'),
       indexName: getSecret('AZURE_AI_SEARCH_INDEX_NAME'),
     };
-    
+
     if (!credentials.endpoint || !credentials.apiKey || !credentials.indexName) {
       return null;
     }
-    
+
     console.log('✅ Credentials retrieved from Kubernetes\n');
     return credentials;
   } catch (error) {
@@ -90,20 +90,20 @@ async function getAzureSearchCredentialsFromKubernetes(
 
 async function getMongoDBUrlFromKubernetes(projectId: string): Promise<string | null> {
   const namespace = `bubble-demo-${projectId}-chatbot`;
-  
+
   console.log('📡 Fetching MongoDB credentials from Kubernetes...');
-  
+
   try {
     const { execSync } = await import('child_process');
     const base64Value = execSync(
       `kubectl get secret env-vars -n ${namespace} -o jsonpath='{.data.CHATBOT_MONGO_DB_URL}'`,
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     ).trim();
-    
+
     if (!base64Value) {
       return null;
     }
-    
+
     // Decode base64
     const connectionString = Buffer.from(base64Value, 'base64').toString('utf-8');
     console.log('✅ Credentials retrieved from Kubernetes\n');
@@ -116,11 +116,11 @@ async function getMongoDBUrlFromKubernetes(projectId: string): Promise<string | 
 async function performMongoDBCleanup(projectId: string) {
   // Try to get connection string from Kubernetes first
   let connectionString = await getMongoDBUrlFromKubernetes(projectId);
-  
+
   // Fallback to manual password entry if Kubernetes fetch fails
   if (!connectionString) {
     console.log('⚠️  Could not fetch from Kubernetes, falling back to manual entry\n');
-    
+
     const { password } = await prompts({
       type: 'password',
       name: 'password',
@@ -153,23 +153,11 @@ async function performMongoDBCleanup(projectId: string) {
       return;
     }
 
-    // Display all collections in a formatted table
-    console.log('📊 Collections in database:\n');
-    console.log('   Collection Name                    Documents');
-    console.log('   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    // Display detailed summaries and collection table
+    await displayCollectionSummaries(db, collections);
 
-    let totalDocuments = 0;
-    for (const col of collections) {
-      const paddedName = col.name.padEnd(35);
-      const paddedCount = col.count.toString().padStart(6);
-      console.log(`   ${paddedName}${paddedCount}`);
-      totalDocuments += col.count;
-    }
-
-    console.log('   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    const paddedTotal = 'Total:'.padEnd(35);
-    const paddedTotalCount = totalDocuments.toString().padStart(6);
-    console.log(`   ${paddedTotal}${paddedTotalCount}\n`);
+    // Calculate total documents for confirmation message
+    const totalDocuments = collections.reduce((sum, col) => sum + col.count, 0);
 
     // Single confirmation to delete all collections
     const { confirmDelete } = await prompts({
@@ -210,6 +198,84 @@ async function getAllCollectionsWithCounts(db: any) {
   return collections;
 }
 
+async function displayCollectionSummaries(
+  db: any,
+  collections: { name: string; count: number }[]
+) {
+  console.log('📋 Collection Summaries:\n');
+
+  // Only show summaries for specific collections
+  const collectionsToSummarize = ['users', 'chatbots', 'knowledgebases'];
+
+  for (const col of collections) {
+    const collectionName = col.name;
+    const count = col.count;
+
+    // Skip collections we don't want to summarize
+    if (!collectionsToSummarize.includes(collectionName)) {
+      continue;
+    }
+
+    // Show collection name with count
+    console.log(`   ${collectionName} (${count === 0 ? 'empty' : count}):`);
+
+    if (count === 0) {
+      console.log('');
+      continue;
+    }
+
+    try {
+      const documents = await db.collection(collectionName).find({}).limit(10).toArray();
+
+      // Format based on collection type
+      if (collectionName === 'users') {
+        for (const doc of documents) {
+          const name = `${doc.firstName || ''} ${doc.lastName || ''}`.trim();
+          const email = doc.email || '';
+          const role = doc.role || '';
+          console.log(`      • ${name} <${email}> (${role})`);
+        }
+      } else if (collectionName === 'chatbots') {
+        for (const doc of documents) {
+          const name = doc.name || 'Unnamed';
+          const tone = doc.toneOfVoice || '';
+          const formality = doc.formalityLevel || '';
+          console.log(`      • ${name} (${tone}, ${formality})`);
+        }
+      } else if (collectionName === 'knowledgebases') {
+        for (const doc of documents) {
+          const name = doc.name || 'Unnamed';
+          const type = doc.type || '';
+          const status = doc.indexingStatus || '';
+          console.log(`      • ${name} (${type}, ${status})`);
+        }
+      }
+
+      console.log('');
+    } catch (error) {
+      console.log(`      ⚠️  Could not fetch documents\n`);
+    }
+  }
+
+  // Display all collections in a formatted table
+  console.log('📊 Collections in database:\n');
+  console.log('   Collection Name                    Documents');
+  console.log('   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  let totalDocuments = 0;
+  for (const col of collections) {
+    const paddedName = col.name.padEnd(35);
+    const paddedCount = col.count.toString().padStart(6);
+    console.log(`   ${paddedName}${paddedCount}`);
+    totalDocuments += col.count;
+  }
+
+  console.log('   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  const paddedTotal = 'Total:'.padEnd(35);
+  const paddedTotalCount = totalDocuments.toString().padStart(6);
+  console.log(`   ${paddedTotal}${paddedTotalCount}\n`);
+}
+
 async function deleteAllCollections(
   db: any,
   collections: { name: string; count: number }[]
@@ -232,7 +298,7 @@ async function deleteAllCollections(
 async function deleteAzureSearchIndex(credentials: AzureSearchCredentials): Promise<boolean> {
   const { endpoint, apiKey, indexName } = credentials;
   const url = `${endpoint}/indexes/${indexName}?api-version=2023-11-01`;
-  
+
   try {
     const response = await fetch(url, {
       method: 'DELETE',
@@ -240,12 +306,12 @@ async function deleteAzureSearchIndex(credentials: AzureSearchCredentials): Prom
         'api-key': apiKey,
       },
     });
-    
+
     if (response.status === 204 || response.status === 404) {
       // 204 = deleted successfully, 404 = index didn't exist
       return true;
     }
-    
+
     console.error(`   ❌ Failed to delete index: ${response.status} ${response.statusText}`);
     return false;
   } catch (error) {
@@ -283,26 +349,26 @@ function displayManualAzureSearchLinks(projectId: string) {
 async function performAzureSearchCleanup(projectId: string) {
   console.log('\n🔍 Azure AI Search Index Cleanup');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  
+
   // Try to get credentials from Kubernetes
   const credentials = await getAzureSearchCredentialsFromKubernetes(projectId);
-  
+
   if (credentials) {
     // Automatic deletion flow
     console.log(`   Index name: ${credentials.indexName}`);
     console.log(`   Endpoint:   ${credentials.endpoint}\n`);
-    
+
     const { confirmDelete } = await prompts({
       type: 'confirm',
       name: 'confirmDelete',
       message: `Delete Azure AI Search index "${credentials.indexName}"?`,
       initial: false,
     });
-    
+
     if (confirmDelete) {
       console.log('\n   🗑️  Deleting index...');
       const success = await deleteAzureSearchIndex(credentials);
-      
+
       if (success) {
         console.log('   ✅ Azure AI Search index deleted successfully\n');
       } else {
@@ -316,14 +382,14 @@ async function performAzureSearchCleanup(projectId: string) {
     // Fallback to manual flow
     console.log('⚠️  Could not fetch credentials from Kubernetes\n');
     displayManualAzureSearchLinks(projectId);
-    
+
     const { confirmed } = await prompts({
       type: 'confirm',
       name: 'confirmed',
       message: 'Have you completed the Azure AI Search index cleanup?',
       initial: false,
     });
-    
+
     if (confirmed) {
       console.log('   ✅ Azure AI Search index cleanup confirmed\n');
     } else {
