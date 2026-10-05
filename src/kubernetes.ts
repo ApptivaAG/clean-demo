@@ -71,18 +71,23 @@ export async function getKubernetesSecretValue(
   key: string
 ): Promise<string | null> {
   try {
-    const { execSync } = await import('child_process');
-    const base64Value = execSync(
-      `kubectl get secret ${secretName} -n ${namespace} -o jsonpath='{.data.${key}}'`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    const { execFileSync } = await import('child_process');
+    const base64Value = execFileSync(
+      'kubectl',
+      ['get', 'secret', secretName, '-n', namespace, '-o', `jsonpath={.data.${key}}`],
+      { encoding: 'utf-8', stdio: ['inherit', 'pipe', 'pipe'] }
     ).trim();
 
     if (!base64Value) {
+      console.warn(`   Kubernetes secret ${namespace}/${secretName} has no value for ${key}`);
       return null;
     }
 
     return Buffer.from(base64Value, 'base64').toString('utf-8');
   } catch (error) {
+    const stderr = (error as { stderr?: Buffer | string })?.stderr?.toString().trim();
+    const message = stderr || (error instanceof Error ? error.message : 'Unknown kubectl error');
+    console.warn(`   Could not read ${key} from Kubernetes secret ${namespace}/${secretName}: ${message}`);
     return null;
   }
 }

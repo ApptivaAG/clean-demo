@@ -4,8 +4,7 @@ import prompts from 'prompts';
 import { performMongoDBCleanup } from './mongodb.js';
 import { performAzureSearchCleanup } from './azure-search.js';
 import { restartKubernetesDeployment } from './kubernetes.js';
-
-
+import { normalizeProjectId, validateProjectId } from './project-id.js';
 
 async function main() {
   console.log('🧹 Demo Chatbot Cleanup Tool\n');
@@ -15,7 +14,8 @@ async function main() {
     type: 'text',
     name: 'projectId',
     message: 'Enter project ID (e.g., kd6zk2):',
-    validate: (value) => (value.length > 0 ? true : 'Project ID is required'),
+    validate: validateProjectId,
+    format: normalizeProjectId,
   });
 
   if (!projectId) {

@@ -12,7 +12,7 @@ nix run github:ApptivaAG/clean-demo
 
 The script will:
 1. Ask for your project ID (e.g., `kd6zk2`)
-2. Ask for your password (hidden input)
+2. Read the MongoDB connection string from the Kubernetes secret `env-vars` in `bubble-demo-{projectId}-chatbot`, using `MONGO_DB_URL` or `CHATBOT_MONGO_DB_URL`. If the lookup fails, display the reason and ask for your password with hidden input.
 3. Connect to the MongoDB database
 4. Show document count for each collection
 5. Ask for confirmation before each operation
