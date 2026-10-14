@@ -75,7 +75,7 @@ export async function performMongoDBCleanup(projectId: string) {
 }
 
 async function getMongoDBUrlFromKubernetes(projectId: string): Promise<string | null> {
-  const namespace = `bubble-demo-${projectId}-chatbot`;
+  const namespace = `demo-${projectId}-chatbot`;
   const secretName = 'env-vars';
 
   console.log('📡 Fetching MongoDB credentials from Kubernetes...');
