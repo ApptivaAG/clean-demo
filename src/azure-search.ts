@@ -62,7 +62,7 @@ export async function performAzureSearchCleanup(projectId: string) {
 async function getAzureSearchCredentialsFromKubernetes(
   projectId: string
 ): Promise<AzureSearchCredentials | null> {
-  const namespace = `bubble-demo-${projectId}-chatbot`;
+  const namespace = `demo-${projectId}-chatbot`;
   const secretName = 'env-vars';
 
   console.log('📡 Fetching Azure AI Search credentials from Kubernetes...');
@@ -106,7 +106,7 @@ async function deleteAzureSearchIndex(credentials: AzureSearchCredentials): Prom
 
 async function displayManualAzureSearchLinks(projectId: string) {
   console.log(`\n   To complete the cleanup, delete the Azure AI Search index:\n`);
-  console.log(`   Index name: bubble-demo-${projectId}\n`);
+  console.log(`   Index name: demo-${projectId}\n`);
 
   // Try to get endpoint from kubectl
   const credentials = await getAzureSearchCredentialsFromKubernetes(projectId);
@@ -117,7 +117,7 @@ async function displayManualAzureSearchLinks(projectId: string) {
     console.log(`   Direct index URL: ${credentials.endpoint}/indexes/${credentials.indexName}\n`);
   } else {
     console.log('   ⚠️  Could not retrieve Azure Search endpoint from Kubernetes');
-    console.log(`   Please check the namespace: bubble-demo-${projectId}-chatbot\n`);
+    console.log(`   Please check the namespace: demo-${projectId}-chatbot\n`);
   }
 
   console.log('   Instructions:');
