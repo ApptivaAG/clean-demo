@@ -1,7 +1,7 @@
 import prompts from 'prompts';
 
 export async function restartKubernetesDeployment(projectId: string) {
-  const namespace = `bubble-demo-${projectId}-chatbot`;
+  const namespace = `demo-${projectId}-chatbot`;
 
   console.log('\n🔄 Kubernetes Chatbot Restart');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
